@@ -1,0 +1,204 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    font-family: 'Be Vietnam Pro', 'Space Grotesk', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+    color: #101828;
+    background-color: #f4f7fb;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    --radius: 0.5rem;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at top right, rgba(98, 209, 238, 0.25), transparent 40%), #f4f7fb;
+    background-attachment: fixed;
+    /* Ensure gradient stays fixed */
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .app-shell {
+    min-height: 100vh;
+    display: flex;
+    gap: 2rem;
+  }
+
+  .card-panel {
+    @apply border border-slate-900/10 rounded-[20px] shadow-card;
+    background-color: rgba(255, 255, 255, 0.92);
+  }
+}
+
+/* Custom utility classes based on Figma designs */
+@layer utilities {
+
+  /* Background gradients */
+  .bg-gradient-main {
+    background-image: var(--color-bg-gradient);
+  }
+
+  /* Typography utilities */
+  .font-primary {
+    font-family: var(--font-primary);
+  }
+
+  .font-secondary {
+    font-family: var(--font-secondary);
+  }
+
+  /* Layout utilities */
+  .layout-max {
+    max-width: var(--layout-max-width);
+  }
+
+  .layout-sidebar {
+    width: var(--layout-sidebar-width);
+    min-width: var(--layout-sidebar-width);
+  }
+
+  /* Interview screen specific utilities */
+  .interview-container {
+    display: flex;
+    align-items: flex-start;
+    column-gap: var(--space-3xl);
+    border-radius: var(--radius-xl);
+    padding: var(--space-6);
+    width: var(--layout-max-width);
+    height: 1200px;
+    overflow: hidden;
+    background-image: var(--color-bg-gradient);
+  }
+
+  .interview-sidebar {
+    display: flex;
+    position: relative;
+    flex-direction: column;
+    flex-shrink: 0;
+    align-items: center;
+    align-self: stretch;
+    justify-content: space-between;
+    background: var(--color-bg-primary);
+    padding: var(--space-4) var(--space-2);
+    width: var(--layout-sidebar-width);
+    min-width: var(--layout-sidebar-width);
+  }
+
+  .interview-content {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    align-items: flex-start;
+    padding: var(--space-4);
+    row-gap: var(--space-5);
+  }
+
+  .chat-bubble {
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-primary);
+    padding: var(--space-4) var(--space-4) var(--space-6);
+    overflow: hidden;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    column-gap: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-primary-light);
+    padding: var(--space-1) var(--space-2);
+    overflow: hidden;
+  }
+
+  .control-button {
+    flex-shrink: 0;
+    border-radius: var(--radius-full);
+    width: 64px;
+    height: 64px;
+    overflow: hidden;
+  }
+
+  .record-button {
+    position: relative;
+    flex-shrink: 0;
+    border: 1px solid var(--color-border-tertiary);
+    border-radius: var(--radius-md);
+    background: var(--color-warning);
+    width: 64px;
+    height: 64px;
+  }
+
+  .search-input {
+    display: flex;
+    flex-grow: 1;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--radius-full);
+    background: var(--color-bg-primary);
+    padding: var(--space-2) var(--space-3);
+    overflow: hidden;
+  }
+
+  .filter-button {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--radius-full);
+    background: var(--color-bg-primary);
+    padding: var(--space-2);
+  }
+
+  .interview-card {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    align-self: stretch;
+    column-gap: var(--space-2);
+  }
+
+  .section-title {
+    flex-shrink: 0;
+    line-height: var(--line-height-2xl);
+    letter-spacing: 0;
+    color: var(--color-text-primary);
+    font-family: var(--font-primary);
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .body-text {
+    flex-shrink: 0;
+    line-height: var(--line-height-loose);
+    letter-spacing: 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-primary);
+    font-size: var(--font-size-lg);
+  }
+
+  .caption-text {
+    flex-shrink: 0;
+    line-height: var(--line-height-tight);
+    letter-spacing: 0;
+    color: var(--color-text-primary);
+    font-family: var(--font-secondary);
+    font-size: var(--font-size-xs);
+  }
+}
