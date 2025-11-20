@@ -6,6 +6,7 @@ image = (
     .apt_install("git")
     .pip_install(
         "torch",
+        "torchvision",
         "transformers",
         "accelerate",
         "bitsandbytes",
@@ -23,6 +24,7 @@ image = (
 def download_model():
     from unsloth import FastLanguageModel
     import torch
+    # Unsloth requires GPU check to pass, even for download sometimes if it initializes cuda
     FastLanguageModel.from_pretrained(
         model_name="unsloth/gemma-3-4b-it-bnb-4bit",
         max_seq_length=2048,
@@ -30,12 +32,13 @@ def download_model():
         load_in_4bit=True,
     )
 
-image = image.run_function(download_model)
+# Request GPU for the build step so Unsloth can initialize
+image = image.run_function(download_model, gpu="T4")
 
 app = modal.App("ai-interview-backend", image=image)
 
 # 1. LLM Function (Gemma 3 4b via Unsloth)
-@app.cls(gpu="T4", container_idle_timeout=300)
+@app.cls(gpu="T4", scaledown_window=300)
 class LLMEngine:
     def __enter__(self):
         from unsloth import FastLanguageModel
@@ -65,7 +68,7 @@ class LLMEngine:
         return self.tokenizer.decode(generated_ids, skip_special_tokens=True)
 
 # 2. STT Function (Faster-Whisper)
-@app.cls(gpu="T4", container_idle_timeout=300)
+@app.cls(gpu="T4", scaledown_window=300)
 class STTEngine:
     def __enter__(self):
         from faster_whisper import WhisperModel
@@ -97,7 +100,7 @@ class EmbeddingEngine:
 
 # 4. Web Endpoint (FastAPI)
 @app.function()
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def api_entrypoint(item: dict):
     # Simple router
     action = item.get("action")
