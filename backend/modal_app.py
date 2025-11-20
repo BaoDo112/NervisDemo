@@ -3,6 +3,7 @@ import modal
 # Define the image with dependencies
 image = (
     modal.Image.debian_slim()
+    .apt_install("git")
     .pip_install(
         "torch",
         "transformers",
@@ -17,15 +18,19 @@ image = (
     # Install Unsloth (requires specific steps, simplifying for now to compatible versions)
     # In production, use the official Unsloth docker image or install script
     .pip_install("unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git")
-    .run_function(
-        lambda: __import__("unsloth").FastLanguageModel.from_pretrained(
-            model_name="unsloth/gemma-3-4b-it-bnb-4bit",
-            max_seq_length=2048,
-            dtype=None,
-            load_in_4bit=True,
-        )
-    )
 )
+
+def download_model():
+    from unsloth import FastLanguageModel
+    import torch
+    FastLanguageModel.from_pretrained(
+        model_name="unsloth/gemma-3-4b-it-bnb-4bit",
+        max_seq_length=2048,
+        dtype=None,
+        load_in_4bit=True,
+    )
+
+image = image.run_function(download_model)
 
 app = modal.App("ai-interview-backend", image=image)
 
