@@ -218,10 +218,22 @@ const InterviewVoice: React.FC = () => {
         const b64 = await blobToBase64(result.blob)
         setMessages(prev => prev.concat({ id: crypto.randomUUID(), role: 'user', content: 'Đang phiên âm...' }))
         try {
-          const voiceUrl = `${getApiBase()}/voice/transcribe`
-          const res2 = await fetch(voiceUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioBase64: b64, mimeType: result.mimeType }) })
-          const data: { success: boolean; transcript?: string } = await res2.json()
-          let text = data.transcript || 'Không có transcript'
+          const modalUrl = import.meta.env.VITE_MODAL_API_URL as string | undefined
+          const apiBase = getApiBase()
+          let data: { success?: boolean; transcript?: string; text?: string }
+          if (modalUrl && modalUrl.length > 0) {
+            const res = await fetch(modalUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'transcribe', payload: b64 }) })
+            const json = await res.json()
+            data = { success: true, transcript: json.text }
+          } else if (apiBase) {
+            const res = await fetch(`${apiBase}/voice/transcribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioBase64: b64, mimeType: result.mimeType }) })
+            data = await res.json()
+          } else {
+            setNotification({ isOpen: true, title: 'Không thể kết nối', description: 'Chưa cấu hình API Base URL. Thiết lập VITE_MODAL_API_URL hoặc VITE_API_BASE_URL.', type: 'error' })
+            setMessages(prev => prev.filter(m => m.content === 'Đang phiên âm...' ? false : true))
+            return
+          }
+          const text = data.transcript || 'Không có transcript'
 
           // Filter spam and promotional content
           const spamKeywords = [
@@ -308,24 +320,29 @@ const InterviewVoice: React.FC = () => {
   }
 
   const handleAiResponse = async (text: string) => {
-    const chatUrl = `${getApiBase()}/chat/complete`
-    const chatRes = await fetch(chatUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, sessionId, difficulty, role: userRole, topic }),
-    })
-    const chatData: { success: boolean; reply?: string } = await chatRes.json()
+    const modalUrl = import.meta.env.VITE_MODAL_API_URL as string | undefined
+    const apiBase = getApiBase()
+    let chatData: { success: boolean; reply?: string }
+    if (modalUrl && modalUrl.length > 0) {
+      const messagesPayload = [
+        { role: 'system', content: `Bạn là AI Interviewer. Chủ đề: ${topic}. Vai trò người dùng: ${userRole}. Độ khó: ${difficulty}.` },
+        { role: 'user', content: text }
+      ]
+      const res = await fetch(modalUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'chat', payload: messagesPayload }) })
+      const json = await res.json()
+      chatData = { success: true, reply: json.response }
+    } else if (apiBase) {
+      const res = await fetch(`${apiBase}/chat/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, sessionId, difficulty, role: userRole, topic }) })
+      chatData = await res.json()
+    } else {
+      setNotification({ isOpen: true, title: 'Không thể kết nối', description: 'Chưa cấu hình API Base URL. Thiết lập VITE_MODAL_API_URL hoặc VITE_API_BASE_URL.', type: 'error' })
+      return
+    }
     if (chatData.reply) {
       setMessages(prev => prev.concat({ id: crypto.randomUUID(), role: 'ai', content: chatData.reply! }))
       setIsAiSpeaking(true)
       try {
-        const ttsRes = await fetch(`${getApiBase()}/tts/speak`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: chatData.reply, lang: 'vi' }) })
-        const ttsData: { success: boolean; wav?: string } = await ttsRes.json()
-        if (ttsData.success && ttsData.wav) {
-          await player.play(ttsData.wav)
-        } else {
-          tts.speak(chatData.reply!)
-        }
+        tts.speak(chatData.reply!)
       } catch {
         tts.speak(chatData.reply!)
       } finally {
