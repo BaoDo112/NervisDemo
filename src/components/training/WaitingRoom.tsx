@@ -68,7 +68,6 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({ onJoinCall }) => {
             })
             .on('broadcast', { event: 'call_accepted' }, ({ payload }) => {
                 if (payload.receiverId === user.id) {
-                    // Call accepted, join the room
                     onJoinCall(payload.roomId, payload.accepterId);
                 }
             })
@@ -137,8 +136,8 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({ onJoinCall }) => {
             type: 'broadcast',
             event: 'call_accepted',
             payload: {
-                callerId: incomingCall.callerId, // Original caller
-                receiverId: incomingCall.callerId, // Send back to caller
+                callerId: incomingCall.callerId,
+                receiverId: incomingCall.callerId,
                 accepterId: user.id,
                 roomId: incomingCall.roomId,
             },
@@ -173,6 +172,37 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({ onJoinCall }) => {
                 type={notification.type}
             />
 
+            {/* Incoming Call Modal */}
+            {incomingCall && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className="w-full max-w-sm bg-white rounded-[32px] p-8 shadow-2xl scale-100 animate-in zoom-in-95 duration-200 flex flex-col items-center">
+                        <div className="w-24 h-24 bg-brand-cyan/10 rounded-full flex items-center justify-center mb-6 relative">
+                            <div className="absolute inset-0 rounded-full bg-brand-cyan/20 animate-ping" />
+                            <PhoneIncoming className="w-10 h-10 text-brand-cyan relative z-10" />
+                        </div>
+
+                        <h3 className="text-2xl font-bold text-slate-900 mb-2">{incomingCall.callerName}</h3>
+                        <p className="text-slate-500 mb-8">đang gọi video cho bạn...</p>
+
+                        <div className="flex items-center gap-6 w-full justify-center">
+                            <button onClick={rejectCall} className="flex flex-col items-center gap-2 group">
+                                <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center transition-all group-hover:bg-red-200">
+                                    <PhoneOff className="w-8 h-8 text-red-600" />
+                                </div>
+                                <span className="text-sm font-medium text-slate-600">Từ chối</span>
+                            </button>
+
+                            <button onClick={acceptCall} className="flex flex-col items-center gap-2 group">
+                                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center transition-all group-hover:bg-green-200">
+                                    <Phone className="w-8 h-8 text-green-600" />
+                                </div>
+                                <span className="text-sm font-medium text-slate-600">Trả lời</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Status Card */}
             <Card className="col-span-full bg-white/80 backdrop-blur-sm border-slate-200 shadow-sm">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -189,43 +219,6 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({ onJoinCall }) => {
                     </Button>
                 </CardHeader>
             </Card>
-
-            {/* Incoming Call Modal (Custom Design) */}
-            {incomingCall && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
-                    <div className="w-full max-w-sm bg-white rounded-[32px] p-8 shadow-2xl scale-100 animate-in zoom-in-95 duration-200 flex flex-col items-center">
-                        <div className="w-24 h-24 bg-brand-cyan/10 rounded-full flex items-center justify-center mb-6 relative">
-                            <div className="absolute inset-0 rounded-full bg-brand-cyan/20 animate-ping" />
-                            <PhoneIncoming className="w-10 h-10 text-brand-cyan relative z-10" />
-                        </div>
-
-                        <h3 className="text-2xl font-bold text-slate-900 mb-2">{incomingCall.callerName}</h3>
-                        <p className="text-slate-500 mb-8">đang gọi video cho bạn...</p>
-
-                        <div className="flex items-center gap-6 w-full justify-center">
-                            <button
-                                onClick={rejectCall}
-                                className="flex flex-col items-center gap-2 group"
-                            >
-                                <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center transition-all group-hover:bg-red-200">
-                                    <PhoneOff className="w-8 h-8 text-red-600" />
-                                </div>
-                                <span className="text-sm font-medium text-slate-600">Từ chối</span>
-                            </button>
-
-                            <button
-                                onClick={acceptCall}
-                                className="flex flex-col items-center gap-2 group"
-                            >
-                                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center transition-all group-hover:bg-green-200">
-                                    <Phone className="w-8 h-8 text-green-600" />
-                                </div>
-                                <span className="text-sm font-medium text-slate-600">Trả lời</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Users List */}
             <div className="col-span-full grid gap-6 md:grid-cols-3">
@@ -288,7 +281,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({ onJoinCall }) => {
                     </CardContent>
                 </Card>
 
-                {/* Simplified Info Card */}
+                {/* Info Card */}
                 <Card className="bg-gradient-to-br from-brand-cyan/5 to-blue-50 border-brand-cyan/20 h-fit">
                     <CardHeader>
                         <CardTitle className="text-brand-cyan text-lg">Lưu ý nhanh</CardTitle>
