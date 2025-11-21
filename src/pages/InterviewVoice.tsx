@@ -4,7 +4,7 @@ import { useAudioRecorder, blobToBase64 } from '@/hooks/useAudioRecorder'
 import { useWebcam } from '@/hooks/useWebcam'
 import { useTTS } from '@/hooks/useTTS'
 import { useAudioAnalysis } from '@/hooks/useAudioAnalysis'
-import { getApiBase } from '@/lib/api'
+import { getApiBase, getModalUrl } from '@/lib/api'
 import { useAudioPlayer } from '@/hooks/useAudioPlayer'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { AudioVisualizer } from '@/components/AudioVisualizer'
@@ -218,16 +218,19 @@ const InterviewVoice: React.FC = () => {
         const b64 = await blobToBase64(result.blob)
         setMessages(prev => prev.concat({ id: crypto.randomUUID(), role: 'user', content: 'Đang phiên âm...' }))
         try {
-          const modalUrl = (import.meta.env.VITE_MODAL_API_URL ?? (import.meta as any).env?.MODAL_API_URL) as string | undefined
+          const modalUrl = getModalUrl()
+          const isDev = import.meta.env.DEV
           const apiBase = getApiBase()
           let data: { success?: boolean; transcript?: string; text?: string }
-          if (modalUrl && modalUrl.length > 0) {
-            const res = await fetch(modalUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'transcribe', payload: b64 }) })
-            const json = await res.json()
-            data = { success: true, transcript: json.text }
-          } else if (apiBase) {
+          // Prefer local API base (Ollama/STT) first
+          if (apiBase) {
             const res = await fetch(`${apiBase}/voice/transcribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioBase64: b64, mimeType: result.mimeType }) })
             data = await res.json()
+          } else if (modalUrl && modalUrl.length > 0) {
+            const target = isDev ? modalUrl : '/api/modal-proxy'
+            const res = await fetch(target, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'transcribe', payload: b64 }) })
+            const json = await res.json()
+            data = { success: true, transcript: json.text }
           } else {
             setNotification({ isOpen: true, title: 'Không thể kết nối', description: 'Chưa cấu hình API Base URL. Thiết lập VITE_MODAL_API_URL (hoặc MODAL_API_URL) hoặc VITE_API_BASE_URL.', type: 'error' })
             setMessages(prev => prev.filter(m => m.content === 'Đang phiên âm...' ? false : true))
@@ -320,34 +323,48 @@ const InterviewVoice: React.FC = () => {
   }
 
   const handleAiResponse = async (text: string) => {
-    const modalUrl = (import.meta.env.VITE_MODAL_API_URL ?? (import.meta as any).env?.MODAL_API_URL) as string | undefined
+    const modalUrl = getModalUrl()
+    const isDev = import.meta.env.DEV
     const apiBase = getApiBase()
-    let chatData: { success: boolean; reply?: string }
-    if (modalUrl && modalUrl.length > 0) {
-      const messagesPayload = [
-        { role: 'system', content: `Bạn là AI Interviewer. Chủ đề: ${topic}. Vai trò người dùng: ${userRole}. Độ khó: ${difficulty}.` },
-        { role: 'user', content: text }
-      ]
-      const res = await fetch(modalUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'chat', payload: messagesPayload }) })
-      const json = await res.json()
-      chatData = { success: true, reply: json.response }
-    } else if (apiBase) {
-      const res = await fetch(`${apiBase}/chat/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, sessionId, difficulty, role: userRole, topic }) })
-      chatData = await res.json()
-    } else {
-      setNotification({ isOpen: true, title: 'Không thể kết nối', description: 'Chưa cấu hình API Base URL. Thiết lập VITE_MODAL_API_URL (hoặc MODAL_API_URL) hoặc VITE_API_BASE_URL.', type: 'error' })
+    const fetchReply = async (): Promise<string> => {
+      // Prefer local API first
+      if (apiBase) {
+        const res = await fetch(`${apiBase}/chat/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, sessionId, difficulty, role: userRole, topic }) })
+        const json = await res.json()
+        return (json.reply || '').trim()
+      }
+      if (modalUrl && modalUrl.length > 0) {
+        const messagesPayload = [
+          { role: 'system', content: `Bạn là AI Interviewer chuyên nghiệp. Trả lời trực tiếp, súc tích (2-4 câu), không yêu cầu thêm bối cảnh. Chủ đề: ${topic}. Vai trò: ${userRole}. Độ khó: ${difficulty}. Ngôn ngữ: tiếng Việt.` },
+          { role: 'user', content: text }
+        ]
+        const target = isDev ? modalUrl : '/api/modal-proxy'
+        const res = await fetch(target, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'chat', payload: messagesPayload }) })
+        const json = await res.json()
+        const baseReply = typeof json.response === 'string' ? json.response : (typeof json.text === 'string' ? json.text : (typeof json.error === 'string' ? json.error : ''))
+        return (baseReply || '').trim()
+      }
+      return ''
+    }
+
+    let reply = await fetchReply()
+    const isWeak = reply.toLowerCase().includes('xin lỗi, hệ thống đang khởi động') || reply.startsWith('Về câu hỏi:')
+    if (!reply || isWeak) {
+      reply = await fetchReply()
+    }
+    if (!reply) {
+      setNotification({ isOpen: true, title: 'AI không phản hồi', description: 'Vui lòng thử nói lại hoặc nhập câu hỏi khác.', type: 'info' })
       return
     }
-    if (chatData.reply) {
-      setMessages(prev => prev.concat({ id: crypto.randomUUID(), role: 'ai', content: chatData.reply! }))
-      setIsAiSpeaking(true)
-      try {
-        tts.speak(chatData.reply!)
-      } catch {
-        tts.speak(chatData.reply!)
-      } finally {
-        setIsAiSpeaking(false)
-      }
+
+    setMessages(prev => prev.concat({ id: crypto.randomUUID(), role: 'ai', content: reply }))
+    setIsAiSpeaking(true)
+    try {
+      tts.speak(reply)
+    } catch {
+      tts.speak(reply)
+    } finally {
+      setIsAiSpeaking(false)
     }
 
     // Check if interview should end
@@ -387,9 +404,9 @@ const InterviewVoice: React.FC = () => {
   return (
     <ProtectedRoute>
       <div className="min-h-screen w-full flex items-center justify-center bg-white">
-        <div className="w-[min(1440px,95vw)] rounded-[64px] p-8 bg-gradient-to-br from-white to-[#ecfbff] grid grid-cols-[2fr_1fr] gap-16">
+        <div className="w-[min(1440px,95vw)] h-[88vh] rounded-[64px] p-8 bg-gradient-to-br from-white to-[#ecfbff] grid grid-cols-[2fr_1fr] gap-16 overflow-hidden">
           {/* Left: Video block */}
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-6 min-h-0">
             <div className="flex items-center gap-6 mb-2">
               <div className="w-16 h-16 flex-shrink-0">
                 <img src="/src/assets/sidebar-avatar.png" alt="nervIS" className="w-full h-full object-contain" />
@@ -399,8 +416,8 @@ const InterviewVoice: React.FC = () => {
               </div>
             </div>
 
-            <div className="relative rounded-[32px] overflow-hidden shadow-md border border-slate-200 flex-1 min-h-[500px]">
-              <video ref={webcam.videoRef} className="w-full h-full object-cover" muted playsInline />
+            <div className="relative rounded-[32px] overflow-hidden shadow-md border border-slate-200 flex-1 min-h-0">
+              <video ref={webcam.videoRef} className="w-full h-[55vh] max-h-[55vh] object-cover" muted playsInline />
               {!webcam.isActive && (
                 <div className="absolute inset-0 flex items-center justify-center text-slate-500 bg-slate-100">
                   <span className="text-sm font-medium">Camera Off</span>
@@ -484,7 +501,7 @@ const InterviewVoice: React.FC = () => {
           </div>
 
           {/* Right: AI panel + progress + chat */}
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-6 min-h-0">
             <div className="border border-[#62d0ee] rounded-[24px] bg-white p-3 h-[80px] flex items-center gap-4">
               <div className="rounded-full px-3 py-1.5 bg-gradient-to-r from-[#62d0ee] to-[#62eed4] text-white text-sm font-semibold">AI</div>
               <div className="flex-1 h-[40px] flex items-center justify-between">
@@ -510,7 +527,7 @@ const InterviewVoice: React.FC = () => {
               </div>
             </div>
 
-            <div className="border border-[#62d0ee] rounded-[32px] bg-[#e6faff] p-6 flex-1 overflow-hidden">
+            <div className="border border-[#62d0ee] rounded-[32px] bg-[#e6faff] p-6 flex-1 min-h-0 overflow-hidden">
               <div className="flex-1 overflow-y-auto space-y-6 pr-1">
                 {messages.map((m) => (
                   <div key={m.id} className={`flex ${m.role === 'ai' ? 'justify-start' : 'justify-end'}`}>

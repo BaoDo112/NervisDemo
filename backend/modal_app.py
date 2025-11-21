@@ -1,4 +1,5 @@
 import modal
+from fastapi.responses import JSONResponse
 
 # Define the image with dependencies
 image = (
@@ -52,32 +53,76 @@ class LLMEngine:
             load_in_4bit = True,
         )
         FastLanguageModel.for_inference(self.model)
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     @modal.method()
     def generate(self, messages: list):
-        # Apply chat template
-        prompt = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize = False,
-            add_generation_prompt = True
-        )
-        inputs = self.tokenizer([prompt], return_tensors = "pt").to("cuda")
-        outputs = self.model.generate(**inputs, max_new_tokens = 1024, use_cache = True)
-        # Decode only the new tokens
-        generated_ids = outputs[0][inputs.input_ids.shape[1]:]
-        return self.tokenizer.decode(generated_ids, skip_special_tokens=True)
+        try:
+            tok = self.tokenizer
+            if hasattr(tok, "apply_chat_template"):
+                prompt = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            else:
+                prompt = "\n".join([f"{str(m.get('role'))}: {str(m.get('content'))}" for m in messages]) + "\nassistant:"
+
+            inputs = tok([prompt], return_tensors="pt")
+            if self.device == "cuda":
+                inputs = inputs.to("cuda")
+
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=256,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
+                repetition_penalty=1.1,
+                use_cache=True,
+            )
+            generated_ids = outputs[0][inputs.input_ids.shape[1]:]
+            text = tok.decode(generated_ids, skip_special_tokens=True).strip()
+            if text:
+                return text
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=256,
+                do_sample=True,
+                temperature=0.9,
+                top_p=0.95,
+                use_cache=True,
+            )
+            generated_ids = outputs[0][inputs.input_ids.shape[1]:]
+            text = tok.decode(generated_ids, skip_special_tokens=True).strip()
+            if text:
+                return text
+            user_msgs = [m for m in messages if isinstance(m, dict) and m.get('role') == 'user']
+            last = user_msgs[-1]['content'] if user_msgs else ''
+            return f"Phản hồi sơ bộ cho '{last}': vui lòng mô tả mục tiêu, khó khăn và một ví dụ cụ thể để tôi đặt câu hỏi tiếp theo."
+        except Exception:
+            user_msgs = [m for m in messages if isinstance(m, dict) and m.get('role') == 'user']
+            last = user_msgs[-1]['content'] if user_msgs else ''
+            return f"Phản hồi sơ bộ cho '{last}': vui lòng mô tả mục tiêu, khó khăn và một ví dụ cụ thể để tôi đặt câu hỏi tiếp theo."
 
 # 2. STT Function (Faster-Whisper)
 @app.cls(gpu="T4", scaledown_window=300)
 class STTEngine:
     def __enter__(self):
         from faster_whisper import WhisperModel
-        self.model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+        try:
+            self.model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+        except Exception:
+            # Fallback to CPU if GPU unavailable
+            self.model = WhisperModel("large-v3", device="cpu", compute_type="int8")
 
     @modal.method()
     def transcribe(self, audio_data: bytes):
         import tempfile
         import os
+        # Ensure model is available even if __enter__ wasn't invoked
+        if not hasattr(self, "model") or self.model is None:
+            from faster_whisper import WhisperModel
+            try:
+                self.model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+            except Exception:
+                self.model = WhisperModel("large-v3", device="cpu", compute_type="int8")
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as fp:
             fp.write(audio_data)
@@ -99,26 +144,60 @@ class EmbeddingEngine:
         return self.model.encode(text).tolist()
 
 # 4. Web Endpoint (FastAPI)
+def _cors(data: dict):
+    return JSONResponse(
+        content=data,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+        },
+    )
+
+@app.function()
+@modal.fastapi_endpoint(method="OPTIONS")
+def api_options(_: dict):
+    return _cors({"ok": True})
+
 @app.function()
 @modal.fastapi_endpoint(method="POST")
 def api_entrypoint(item: dict):
-    # Simple router
-    action = item.get("action")
-    payload = item.get("payload")
-    
-    if action == "chat":
-        llm = LLMEngine()
-        return {"response": llm.generate.remote(payload)}
-    
-    elif action == "transcribe":
-        # Payload should be base64 encoded audio
-        import base64
-        audio_bytes = base64.b64decode(payload)
-        stt = STTEngine()
-        return {"text": stt.transcribe.remote(audio_bytes)}
-        
-    elif action == "embed":
-        embedder = EmbeddingEngine()
-        return {"vector": embedder.embed.remote(payload)}
-    
-    return {"error": "Invalid action"}
+    try:
+        # Simple router
+        action = item.get("action")
+        payload = item.get("payload")
+
+        if action == "chat":
+            llm = LLMEngine()
+            try:
+                result = llm.generate.remote(payload)
+                return _cors({"response": result})
+            except Exception:
+                # Fallback reply
+                try:
+                    user_msgs = [m for m in payload if isinstance(m, dict) and m.get('role') == 'user']
+                    last = user_msgs[-1]['content'] if user_msgs else ''
+                except Exception:
+                    last = ''
+                fallback = f"Tôi đã nhận: '{last}'. Bạn hãy nêu mục tiêu và ví dụ cụ thể để tôi đặt câu hỏi tiếp theo."
+                return _cors({"response": fallback})
+
+        elif action == "transcribe":
+            # Payload should be base64 encoded audio
+            import base64
+            audio_bytes = base64.b64decode(payload)
+            stt = STTEngine()
+            try:
+                text = stt.transcribe.remote(audio_bytes)
+                return _cors({"text": text})
+            except Exception:
+                return _cors({"text": ""})
+
+        elif action == "embed":
+            embedder = EmbeddingEngine()
+            vector = embedder.embed.remote(payload)
+            return _cors({"vector": vector})
+
+        return _cors({"error": "Invalid action"})
+    except Exception as e:
+        return _cors({"error": f"server_error: {str(e)}"})
