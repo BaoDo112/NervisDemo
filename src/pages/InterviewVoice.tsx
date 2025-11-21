@@ -218,7 +218,7 @@ const InterviewVoice: React.FC = () => {
         const b64 = await blobToBase64(result.blob)
         setMessages(prev => prev.concat({ id: crypto.randomUUID(), role: 'user', content: 'Đang phiên âm...' }))
         try {
-          const modalUrl = import.meta.env.VITE_MODAL_API_URL as string | undefined
+          const modalUrl = (import.meta.env.VITE_MODAL_API_URL ?? (import.meta as any).env?.MODAL_API_URL) as string | undefined
           const apiBase = getApiBase()
           let data: { success?: boolean; transcript?: string; text?: string }
           if (modalUrl && modalUrl.length > 0) {
@@ -229,7 +229,7 @@ const InterviewVoice: React.FC = () => {
             const res = await fetch(`${apiBase}/voice/transcribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioBase64: b64, mimeType: result.mimeType }) })
             data = await res.json()
           } else {
-            setNotification({ isOpen: true, title: 'Không thể kết nối', description: 'Chưa cấu hình API Base URL. Thiết lập VITE_MODAL_API_URL hoặc VITE_API_BASE_URL.', type: 'error' })
+            setNotification({ isOpen: true, title: 'Không thể kết nối', description: 'Chưa cấu hình API Base URL. Thiết lập VITE_MODAL_API_URL (hoặc MODAL_API_URL) hoặc VITE_API_BASE_URL.', type: 'error' })
             setMessages(prev => prev.filter(m => m.content === 'Đang phiên âm...' ? false : true))
             return
           }
@@ -320,7 +320,7 @@ const InterviewVoice: React.FC = () => {
   }
 
   const handleAiResponse = async (text: string) => {
-    const modalUrl = import.meta.env.VITE_MODAL_API_URL as string | undefined
+    const modalUrl = (import.meta.env.VITE_MODAL_API_URL ?? (import.meta as any).env?.MODAL_API_URL) as string | undefined
     const apiBase = getApiBase()
     let chatData: { success: boolean; reply?: string }
     if (modalUrl && modalUrl.length > 0) {
@@ -335,7 +335,7 @@ const InterviewVoice: React.FC = () => {
       const res = await fetch(`${apiBase}/chat/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, sessionId, difficulty, role: userRole, topic }) })
       chatData = await res.json()
     } else {
-      setNotification({ isOpen: true, title: 'Không thể kết nối', description: 'Chưa cấu hình API Base URL. Thiết lập VITE_MODAL_API_URL hoặc VITE_API_BASE_URL.', type: 'error' })
+      setNotification({ isOpen: true, title: 'Không thể kết nối', description: 'Chưa cấu hình API Base URL. Thiết lập VITE_MODAL_API_URL (hoặc MODAL_API_URL) hoặc VITE_API_BASE_URL.', type: 'error' })
       return
     }
     if (chatData.reply) {
