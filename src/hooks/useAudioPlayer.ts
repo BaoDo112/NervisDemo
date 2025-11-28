@@ -8,7 +8,10 @@ export function useAudioPlayer() {
   const dataBufRef = useRef<Uint8Array>(new Uint8Array(0))
 
   const ensureGraph = () => {
-    if (!audioRef.current) audioRef.current = new Audio()
+    if (!audioRef.current) {
+      audioRef.current = new Audio()
+      try { (audioRef.current as any).crossOrigin = 'anonymous' } catch {}
+    }
     if (!ctxRef.current) ctxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
     if (!analyserRef.current) {
       const analyser = ctxRef.current!.createAnalyser()

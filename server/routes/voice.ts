@@ -36,10 +36,10 @@ let isProcessing = false
 function startPythonProcess() {
   if (pythonProcess) return
 
-  // Switching to 'large-v3' (Standard Faster Whisper) for best multilingual/code-switching performance.
-  // This resolves "FONEN" vs "Frontend" issues better than specific fine-tunes sometimes.
-  const modelDir = process.env.VIWHISPER_MODEL_DIR || 'large-v3'
-  const scriptPath = path.join(process.cwd(), 'api', 'python', 'viwhisper_transcribe.py')
+  // Switching to 'medium' for better stability/speed on local machines.
+  // 'large-v3' is too heavy and causes timeouts/crashes.
+  const modelDir = process.env.VIWHISPER_MODEL_DIR || 'medium'
+  const scriptPath = path.join(process.cwd(), 'server', 'python', 'viwhisper_transcribe.py')
   const venvPy = path.join(process.cwd(), '.venv', 'Scripts', 'python.exe')
   const pythonExe = fs.existsSync(venvPy) ? venvPy : 'python'
 
@@ -90,6 +90,7 @@ function startPythonProcess() {
   pythonProcess.stderr?.on('data', (data) => {
     const msg = data.toString()
     console.error('STT Stderr:', msg)
+    appendLog(path.join(process.cwd(), 'logs', 'voice.log'), { stage: 'stderr', error: msg })
     if (/cudnn_ops64/i.test(msg) || /cudnnCreateTensorDescriptor/i.test(msg)) {
       try { pythonProcess?.kill('SIGKILL') } catch { console.error('STT kill error') }
       pythonProcess = null
@@ -188,7 +189,7 @@ router.post('/transcribe', async (req: Request, res: Response): Promise<void> =>
 
     // Queue for STT
     const result = await new Promise<STTResult>((resolve, reject) => {
-      // Timeout for the queue
+      // Timeout for the queue (60s) to allow for model loading and heavy processing
       const timer = setTimeout(() => reject(new Error('Queue timeout')), 60000)
       requestQueue.push({
         audioPath: finalWav,

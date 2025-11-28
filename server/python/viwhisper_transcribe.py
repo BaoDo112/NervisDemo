@@ -76,7 +76,16 @@ def main():
 
             # Simplify: No prompt to avoid errors
             try:
-                segments, info = model.transcribe(audio_path, language="vi", beam_size=5)
+                # Optimize for speed and reduced hallucinations
+                segments, info = model.transcribe(
+                    audio_path, 
+                    language="vi", 
+                    beam_size=1, 
+                    condition_on_previous_text=False,
+                    temperature=0.0,
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=500)
+                )
                 text = ""
                 for segment in segments:
                     text += segment.text + " "

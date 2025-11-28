@@ -129,6 +129,7 @@ const InterviewVoice: React.FC = () => {
   const [aiFreqData, setAiFreqData] = useState<Uint8Array>(new Uint8Array(0))
   const [showFeedback, setShowFeedback] = useState(false)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
+  const appRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -136,6 +137,21 @@ const InterviewVoice: React.FC = () => {
     }, 1000)
     return () => clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    const anyOpen = showExitConfirm || showFeedback || notification.isOpen
+    const el = appRef.current
+    if (el) {
+      if (anyOpen) el.setAttribute('inert', '')
+      else el.removeAttribute('inert')
+    }
+    if (anyOpen) {
+      const ae = document.activeElement as HTMLElement | null
+      if (ae) {
+        ae.blur()
+      }
+    }
+  }, [showExitConfirm, showFeedback, notification.isOpen])
 
   const rafRef = useRef<number | null>(null)
   const getFreqRef = useRef<() => Uint8Array>(() => new Uint8Array(0))
@@ -222,9 +238,12 @@ const InterviewVoice: React.FC = () => {
           const isDev = import.meta.env.DEV
           const apiBase = getApiBase()
           let data: { success?: boolean; transcript?: string; text?: string }
-          // Prefer local API base (Ollama/STT) first
+          // Prefer local API base (Ollama/STT) first with timeout
           if (apiBase) {
-            const res = await fetch(`${apiBase}/voice/transcribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioBase64: b64, mimeType: result.mimeType }) })
+            const controller = new AbortController()
+            const to = setTimeout(() => controller.abort(), 60000)
+            const res = await fetch(`${apiBase}/voice/transcribe`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioBase64: b64, mimeType: result.mimeType }), signal: controller.signal })
+            clearTimeout(to)
             data = await res.json()
           } else if (modalUrl && modalUrl.length > 0) {
             const target = isDev ? modalUrl : '/api/modal-proxy'
@@ -238,25 +257,21 @@ const InterviewVoice: React.FC = () => {
           }
           const text = data.transcript || 'Không có transcript'
 
-          // Filter spam and promotional content
-          const spamKeywords = [
-            'subscribe',
-            'đăng ký kênh',
-            'la la school',
-            'cảm ơn các bạn đã theo dõi',
-            'like và share',
-            'đừng quên bấm',
-            'nhấn chuông',
-            'video hấp dẫn',
-            'kênh youtube'
-          ]
-
+          // Basic spam check
           const lowerText = text.toLowerCase()
-          const isSpam = spamKeywords.some(keyword => lowerText.includes(keyword))
+          const isHardSpam = lowerText.includes('la la school') ||
+            (lowerText.includes('subscribe') && lowerText.includes('kênh')) ||
+            (lowerText.includes('video') && lowerText.includes('hấp dẫn')) ||
+            lowerText.includes('hãy đăng ký') ||
+            lowerText.includes('cảm ơn các bạn đã theo dõi');
 
-          // If spam detected or text is too short, ignore it
-          if (isSpam || text.trim().length < 3) {
-            setMessages(prev => prev.filter(m => m.content !== 'Đang phiên âm...'))
+          // If spam or too short, remove bubble and notify
+          if (isHardSpam) {
+            setMessages(prev => prev.map(m => (m.content === 'Đang phiên âm...' ? { ...m, content: 'Âm thanh không hợp lệ' } : m)))
+            return
+          }
+          if (text.trim().length < 3) {
+            setMessages(prev => prev.map(m => (m.content === 'Đang phiên âm...' ? { ...m, content: 'Âm thanh quá ngắn, vui lòng nói rõ hơn' } : m)))
             return
           }
 
@@ -347,7 +362,12 @@ const InterviewVoice: React.FC = () => {
       return ''
     }
 
-    let reply = await fetchReply()
+    let reply = ''
+    try {
+      reply = await fetchReply()
+    } catch {
+      reply = ''
+    }
     const isWeak = reply.toLowerCase().includes('xin lỗi, hệ thống đang khởi động') || reply.startsWith('Về câu hỏi:')
     if (!reply || isWeak) {
       reply = await fetchReply()
@@ -360,7 +380,20 @@ const InterviewVoice: React.FC = () => {
     setMessages(prev => prev.concat({ id: crypto.randomUUID(), role: 'ai', content: reply }))
     setIsAiSpeaking(true)
     try {
-      tts.speak(reply)
+      const apiBase = getApiBase()
+      if (apiBase) {
+        const res = await fetch(`${apiBase}/tts/speak`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: reply, lang: 'vi' }) })
+        const json = await res.json()
+        if (json?.success && typeof json.wav === 'string') {
+          const apiOrigin = apiBase.replace(/\/api$/, '')
+          const wavUrl = json.wav.startsWith('http') ? json.wav : `${apiOrigin}${json.wav}`
+          await player.play(wavUrl)
+        } else {
+          tts.speak(reply)
+        }
+      } else {
+        tts.speak(reply)
+      }
     } catch {
       tts.speak(reply)
     } finally {
@@ -404,7 +437,7 @@ const InterviewVoice: React.FC = () => {
   return (
     <ProtectedRoute>
       <div className="min-h-screen w-full flex items-center justify-center bg-white">
-        <div className="w-[min(1440px,95vw)] h-[88vh] rounded-[64px] p-8 bg-gradient-to-br from-white to-[#ecfbff] grid grid-cols-[2fr_1fr] gap-16 overflow-hidden">
+        <div ref={appRef} className="w-[min(1440px,95vw)] h-[88vh] rounded-[64px] p-8 bg-gradient-to-br from-white to-[#ecfbff] grid grid-cols-[2fr_1fr] gap-16 overflow-hidden">
           {/* Left: Video block */}
           <div className="flex flex-col gap-6 min-h-0">
             <div className="flex items-center gap-6 mb-2">
@@ -459,13 +492,13 @@ const InterviewVoice: React.FC = () => {
                   <button
                     onClick={toggleVideoRecording}
                     className={`w-14 h-14 rounded-full border-4 flex items-center justify-center transition-all ${isVideoRecording
-                        ? 'border-red-200 bg-red-50'
-                        : 'border-slate-100 bg-white hover:bg-slate-50'
+                      ? 'border-red-200 bg-red-50'
+                      : 'border-slate-100 bg-white hover:bg-slate-50'
                       }`}
                   >
                     <div className={`rounded-full transition-all ${isVideoRecording
-                        ? 'w-6 h-6 bg-red-500 rounded-md'
-                        : 'w-10 h-10 bg-red-500 rounded-full'
+                      ? 'w-6 h-6 bg-red-500 rounded-md'
+                      : 'w-10 h-10 bg-red-500 rounded-full'
                       }`} />
                   </button>
                   <div className="text-sm font-medium text-slate-700">
@@ -528,7 +561,7 @@ const InterviewVoice: React.FC = () => {
             </div>
 
             <div className="border border-[#62d0ee] rounded-[32px] bg-[#e6faff] p-6 flex-1 min-h-0 overflow-hidden">
-              <div className="flex-1 overflow-y-auto space-y-6 pr-1">
+              <div className="flex-1 h-full overflow-y-auto space-y-6 pr-3 pt-2">
                 {messages.map((m) => (
                   <div key={m.id} className={`flex ${m.role === 'ai' ? 'justify-start' : 'justify-end'}`}>
                     <div className={`${m.role === 'ai' ? 'bg-white text-slate-800 rounded-[16px_4px_16px_16px]' : 'bg-[#62d0ee] text-white rounded-[4px_16px_16px_16px]'} px-4 py-2`}>
@@ -587,7 +620,7 @@ const InterviewVoice: React.FC = () => {
 
       {/* Exit Confirmation Dialog */}
       {showExitConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" role="dialog" aria-modal="true">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-[90vw] p-6 animate-in fade-in zoom-in-95 duration-200">
             <h3 className="text-xl font-bold text-slate-900 mb-2">Kết thúc buổi phỏng vấn?</h3>
             <p className="text-slate-600 mb-6">Bạn có chắc chắn muốn kết thúc buổi phỏng vấn? AI sẽ đánh giá kết quả của bạn.</p>
